@@ -1,36 +1,60 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace _1brc
 {
+    [StructLayout(LayoutKind.Sequential, Size = 16)]
     public struct Summary
     {
-        public double Min;
-        public double Max;
-        public double Sum;
-        public long Count;
-        public double Average => Sum / Count;
+        public long Sum;
+        public int Count;
+        public short Min;
+        public short Max;
+        
+        public double Average => (double)Sum / Count;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Init(double value)
+        public void Apply(int value, bool existing)
         {
-            Min = value;
-            Max = value;
-            Sum += value;
-            Count++;
+            if (existing)
+                Apply(value);
+            else
+                Init(value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Apply(double value)
+        public void Init(int value)
         {
-            if (value < Min)
-                Min = value;
-            else if (value > Max)
-                Max = value;
-            Sum += value;
-            Count++;
+            Sum = value;
+            Count = 1;
+            Min = (short)value;
+            Max = (short)value;
         }
 
-        public void Apply(Summary other)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Apply(int value)
+        {
+            Sum += value;
+            Count++;
+            Min = (short)GetMin(Min, value);
+            Max = (short)GetMax(Max, value);
+            
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            static int GetMin(int a, int b)
+            {
+                int delta = a - b;
+                return b + (delta & (delta >> 31));
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            static int GetMax(int a, int b)
+            {
+                int delta = a - b;
+                return a - (delta & (delta >> 31));
+            }
+        }
+
+        public void Merge(Summary other)
         {
             if (other.Min < Min)
                 Min = other.Min;
@@ -40,6 +64,6 @@ namespace _1brc
             Count += other.Count;
         }
 
-        public override string ToString() => $"{Min:N1}/{Average:N1}/{Max:N1}";
+        public override string ToString() => $"{Min / 10.0:N1}/{Average / 10.0:N1}/{Max / 10.0:N1}";
     }
 }

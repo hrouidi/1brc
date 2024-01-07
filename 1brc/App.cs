@@ -1,10 +1,9 @@
-﻿using System.Buffers.Text;
+﻿using System.Buffers;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO.MemoryMappedFiles;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
+using static System.Runtime.InteropServices.CollectionsMarshal;
 
 namespace _1brc
 {
@@ -19,24 +18,10 @@ namespace _1brc
 
         private readonly int _initialChunkCount;
 
-        private const int MaxChunkSize = int.MaxValue - 100_000;
+        private const int DICT_INIT_CAPACITY = 10000;
+        private const int MAX_CHUNK_SIZE = int.MaxValue - 100_000;
 
         public string FilePath { get; }
-
-        private static readonly double[] _powersOf10 = new double[64];
-        private static GCHandle _powersHandle;
-        private static readonly double* _powersPtr = Init10Powers();
-
-        private static double* Init10Powers()
-        {
-            for (int i = 0; i < 64; i++)
-            {
-                _powersOf10[i] = 1 / Math.Pow(10, i);
-            }
-
-            _powersHandle = GCHandle.Alloc(_powersOf10, GCHandleType.Pinned);
-            return (double*)_powersHandle.AddrOfPinnedObject();
-        }
 
         public App(string filePath, int? chunkCount = null)
         {
@@ -45,7 +30,7 @@ namespace _1brc
 
             _fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.SequentialScan);
             var fileLength = _fileStream.Length;
-            _mmf = MemoryMappedFile.CreateFromFile(_fileStream, $@"{Path.GetFileName(FilePath)}", fileLength, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
+            _mmf = MemoryMappedFile.CreateFromFile(FilePath, FileMode.Open);
 
             byte* ptr = (byte*)0;
             _va = _mmf.CreateViewAccessor(0, fileLength, MemoryMappedFileAccess.Read);
@@ -53,18 +38,21 @@ namespace _1brc
             _vaHandle.AcquirePointer(ref ptr);
 
             _pointer = ptr;
+
             _fileLength = fileLength;
         }
 
         public List<(long start, int length)> SplitIntoMemoryChunks()
         {
+            Debug.Assert(_fileStream.Position == 0);
+
             // We want equal chunks not larger than int.MaxValue
             // We want the number of chunks to be a multiple of CPU count, so multiply by 2
             // Otherwise with CPU_N+1 chunks the last chunk will be processed alone.
 
             var chunkCount = _initialChunkCount;
             var chunkSize = _fileLength / chunkCount;
-            while (chunkSize > MaxChunkSize)
+            while (chunkSize > MAX_CHUNK_SIZE)
             {
                 chunkCount *= 2;
                 chunkSize = _fileLength / chunkCount;
@@ -83,166 +71,103 @@ namespace _1brc
                 }
 
                 var newPos = pos + chunkSize;
-                var sp = new ReadOnlySpan<byte>(_pointer + newPos, (int)chunkSize);
-                var idx = IndexOfNewlineChar(sp, out var stride);
-                newPos += idx + stride;
+
+                _fileStream.Position = newPos;
+
+                int c;
+                while ((c = _fileStream.ReadByte()) >= 0 && c != '\n')
+                {
+                }
+
+                newPos = _fileStream.Position;
                 var len = newPos - pos;
                 chunks.Add((pos, (int)(len)));
                 pos = newPos;
             }
 
+            var previous = chunks[0];
+            for (int i = 1; i < chunks.Count; i++)
+            {
+                var current = chunks[i];
+
+                if (previous.start + previous.length != current.start)
+                    throw new Exception("Bad chunks");
+
+                if (i == chunks.Count - 1 && current.start + current.length != _fileLength)
+                    throw new Exception("Bad last chunks");
+
+                previous = current;
+            }
+
+            _fileStream.Position = 0;
+            
             return chunks;
         }
 
-        public List<(long start, int length)> SplitMock() => [(0, (int)_fileLength)];
-
         public Dictionary<Utf8Span, Summary> ProcessChunk(long start, int length)
         {
-            
-            var result = new Dictionary<Utf8Span, Summary>();
+            var result = new Dictionary<Utf8Span, Summary>(DICT_INIT_CAPACITY);
+            var remaining = new Utf8Span(_pointer + start, length);
 
-            var pos = 0;
-
-            while (pos < length)
+            while (remaining.Length > 0)
             {
-                byte* ptr = _pointer + start + pos;
-
-                var sp = new ReadOnlySpan<byte>(ptr, length);
-
-                int sepIdx = sp.IndexOf((byte)';');
-
-                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(ptr, sepIdx), out var exists);
-
-                sepIdx++;
-
-                sp = sp.Slice(sepIdx);
-
-                var nlIdx = IndexOfNewlineChar(sp, out var stride);
-
-                var value = ParseNaive(sp[..nlIdx]);
-
-                if (exists)
-                    summary.Apply(value);
-                else
-                    summary.Init(value);
-
-                pos += sepIdx + nlIdx + stride;
+                var separatorIdx = remaining.IndexOf(0, (byte)';');
+                var dotIdx = remaining.IndexOf(separatorIdx + 1, (byte)'.');
+                var nlIdx = remaining.IndexOf(dotIdx + 1, (byte)'\n');
+                        
+                GetValueRefOrAddDefault(result, new Utf8Span(remaining.Pointer, separatorIdx), out var exists)
+                    .Apply(remaining.ParseInt(separatorIdx + 1, dotIdx - separatorIdx - 1), exists);
+                remaining = remaining.SliceUnsafe(nlIdx + 1);
             }
 
             return result;
         }
 
-        public Dictionary<Utf8Span, Summary> Process()
-        {
-            //List<(long start, int length)> chunkRanges = SplitIntoMemoryChunks();
-            List<(long start, int length)> chunkRanges = SplitMock();
-            List<Dictionary<Utf8Span, Summary>> chunks = chunkRanges
-                                                         //.AsParallel()
-                                                         .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
-                                                         .ToList();
-
-            Dictionary<Utf8Span, Summary>? result = null;
-
-            foreach (Dictionary<Utf8Span, Summary> chunk in chunks)
-            {
-                if (result == null)
+        public Dictionary<Utf8Span, Summary> Process() =>
+            SplitIntoMemoryChunks()
+                .AsParallel()
+#if DEBUG
+                .WithDegreeOfParallelism(1)
+#endif
+                .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
+                .ToList()
+                .Aggregate((result, chunk) =>
                 {
-                    result = chunk;
-                    continue;
-                }
+                    foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
+                    {
+                        ref var summary = ref GetValueRefOrAddDefault(result, pair.Key, out bool exists);
+                        if (exists)
+                            summary.Merge(pair.Value);
+                        else
+                            summary = pair.Value;
+                    }
 
-                foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
-                {
-                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, pair.Key, out bool exists);
-                    if (exists)
-                        summary.Apply(pair.Value);
-                    else
-                        summary = pair.Value;
-                }
-            }
-
-            return result!;
-        }
-
-
+                    return result;
+                });
 
         public void PrintResult()
         {
-            var sw = Stopwatch.StartNew();
-            Dictionary<Utf8Span, Summary> result = Process();
-            
-            foreach ((Utf8Span key, Summary value)  in result.OrderBy(x => x.Key.ToString())) 
-                Console.WriteLine($"{key} = {value}");
+            var result = Process();
 
-            sw.Stop();
-            Console.WriteLine($"Processed in {sw.Elapsed}");
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int IndexOfNewlineChar(ReadOnlySpan<byte> span, out int stride)
-        {
-            stride = default;
-            int idx = span.IndexOfAny((byte)'\n', (byte)'\r');
-            if ((uint)idx < (uint)span.Length)
+            long count = 0;
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.Write("{");
+            var line = 0;
+            foreach (var pair in result
+                         .Select(x => (Name: x.Key.ToString(), x.Value))
+                         .OrderBy(x => x.Name, StringComparer.Ordinal))
             {
-                stride = 1;
-                if (span[idx] == '\r')
-                {
-                    int nextCharIdx = idx + 1;
-                    if ((uint)nextCharIdx < (uint)span.Length && span[nextCharIdx] == '\n')
-                    {
-                        stride = 2;
-                    }
-                }
+                count += pair.Value.Count;
+                Console.Write($"{pair.Name} = {pair.Value}");
+                line++;
+                if (line < result.Count)
+                    Console.Write(", ");
             }
 
-            return idx;
-        }
+            Console.WriteLine("}");
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private double ParseNaive(ReadOnlySpan<byte> span)
-        {
-            double sign = 1;
-            bool hasDot = false;
-
-            ulong whole = 0;
-            ulong fraction = 0;
-            int fractionCount = 0;
-
-            for (int i = 0; i < span.Length; i++)
-            {
-                var c = (int)span[i];
-
-                if (c == (byte)'-' && !hasDot && sign == 1 && whole == 0)
-                {
-                    sign = -1;
-                }
-                else if (c == (byte)'.' && !hasDot)
-                {
-                    hasDot = true;
-                }
-                else if ((uint)(c - '0') <= 9)
-                {
-                    var digit = c - '0';
-
-                    if (hasDot)
-                    {
-                        fractionCount++;
-                        fraction = fraction * 10 + (ulong)digit;
-                    }
-                    else
-                    {
-                        whole = whole * 10 + (ulong)digit;
-                    }
-                }
-                else
-                {
-                    // Fallback to the full impl on any irregularity
-                    return double.Parse(span, NumberStyles.Float);
-                }
-            }
-
-            return sign * (whole + fraction * _powersPtr[fractionCount]);
+            if (count != 1_000_000_000)
+                Console.WriteLine($"Total row count {count:N0}");
         }
 
         public void Dispose()
