@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Buffers.Text;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
@@ -22,7 +23,7 @@ namespace _1brc
 
         public string FilePath { get; }
 
-        private static double[] _powersOf10 = new double[64];
+        private static readonly double[] _powersOf10 = new double[64];
         private static GCHandle _powersHandle;
         private static readonly double* _powersPtr = Init10Powers();
 
@@ -93,21 +94,24 @@ namespace _1brc
             return chunks;
         }
 
+        public List<(long start, int length)> SplitMock() => [(0, (int)_fileLength)];
+
         public Dictionary<Utf8Span, Summary> ProcessChunk(long start, int length)
         {
+            
             var result = new Dictionary<Utf8Span, Summary>();
 
             var pos = 0;
 
             while (pos < length)
             {
-                var ptr = _pointer + start + pos;
+                byte* ptr = _pointer + start + pos;
 
                 var sp = new ReadOnlySpan<byte>(ptr, length);
 
-                var sepIdx = sp.IndexOf((byte)';');
+                int sepIdx = sp.IndexOf((byte)';');
 
-                ref var summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(ptr, sepIdx), out var exists);
+                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(ptr, sepIdx), out var exists);
 
                 sepIdx++;
 
@@ -115,7 +119,7 @@ namespace _1brc
 
                 var nlIdx = IndexOfNewlineChar(sp, out var stride);
 
-                var value = ParseNaive(sp.Slice(0, nlIdx));
+                var value = ParseNaive(sp[..nlIdx]);
 
                 if (exists)
                     summary.Apply(value);
@@ -130,17 +134,12 @@ namespace _1brc
 
         public Dictionary<Utf8Span, Summary> Process()
         {
-            // var tasks = SplitIntoMemoryChunks() // .Skip(1).Take(1)
-            //     .Select(tuple => Task.Factory.StartNew(() => ProcessChunk(tuple.start, tuple.length), TaskCreationOptions.LongRunning))
-            //     .ToList();
-            // var chunks = Task.WhenAll(tasks).Result;
-
-            var chunkRanges = SplitIntoMemoryChunks();
-            var chunks = chunkRanges
-                .AsParallel()
-                // .WithDegreeOfParallelism(chunkRanges.Count)
-                .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
-                .ToList();
+            //List<(long start, int length)> chunkRanges = SplitIntoMemoryChunks();
+            List<(long start, int length)> chunkRanges = SplitMock();
+            List<Dictionary<Utf8Span, Summary>> chunks = chunkRanges
+                                                         //.AsParallel()
+                                                         .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
+                                                         .ToList();
 
             Dictionary<Utf8Span, Summary>? result = null;
 
@@ -154,7 +153,7 @@ namespace _1brc
 
                 foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
                 {
-                    ref var summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, pair.Key, out bool exists);
+                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, pair.Key, out bool exists);
                     if (exists)
                         summary.Apply(pair.Value);
                     else
@@ -165,15 +164,15 @@ namespace _1brc
             return result!;
         }
 
+
+
         public void PrintResult()
         {
             var sw = Stopwatch.StartNew();
-            var result = Process();
-            Console.WriteLine($"Result count: {result.Count}");
-            foreach (KeyValuePair<Utf8Span, Summary> pair in result.OrderBy(x => x.Key.ToString()))
-            {
-                Console.WriteLine($"{pair.Key} = {pair.Value}");
-            }
+            Dictionary<Utf8Span, Summary> result = Process();
+            
+            foreach ((Utf8Span key, Summary value)  in result.OrderBy(x => x.Key.ToString())) 
+                Console.WriteLine($"{key} = {value}");
 
             sw.Stop();
             Console.WriteLine($"Processed in {sw.Elapsed}");

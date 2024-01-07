@@ -18,7 +18,7 @@ namespace _1brc
             Sum += value;
             Count++;
         }
-        
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Apply(double value)
         {
@@ -39,7 +39,7 @@ namespace _1brc
             Sum += other.Sum;
             Count += other.Count;
         }
-        
+
         public override string ToString() => $"{Min:N1}/{Average:N1}/{Max:N1}";
     }
 }
