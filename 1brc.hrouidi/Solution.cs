@@ -1,5 +1,4 @@
-﻿using System.Buffers.Text;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -17,8 +16,7 @@ namespace _1brc
         private readonly long _fileLength;
         private readonly int _initialChunkCount;
 
-
-
+        
         public Solution(string filePath)
         {
             _initialChunkCount = Environment.ProcessorCount;
@@ -47,7 +45,7 @@ namespace _1brc
                 chunkSize = _fileLength / chunkCount;
             }
 
-            List<(long start, int length)> chunks = new();
+            List<(long start, int length)> chunks = new(chunkCount);
 
             long pos = 0;
 
@@ -63,43 +61,59 @@ namespace _1brc
                 //ReadOnlySpan<byte> sp = new ReadOnlySpan<byte>(_pointer + newPos, (int)chunkSize);
                 ReadOnlySpan<byte> sp = _va.AsSpan(newPos, (int)chunkSize);
                 //var idx = IndexOfNewlineChar(sp, out var stride);
-                int idx = NewLine.IndexOf(sp);
-                newPos += idx + NewLine.NewLineBytesCount;
+                int idx = Helpers.IndexOfNewline(sp);
+                newPos += idx + Helpers.NewLineBytesCount;
                 long len = newPos - pos;
-                chunks.Add((pos, (int)(len)));
+                chunks.Add((pos, (int)len));
                 pos = newPos;
             }
 
             return chunks;
         }
 
-        public Dictionary<Utf8Span, Summary> ProcessChunk(long start, int length)
+        public Dictionary<Utf8Span, Summary> ProcessChunk0(long start, int length)
         {
-            Dictionary<Utf8Span, Summary> result = new();
+            Dictionary<Utf8Span, Summary> result = new(1024);
 
+            ReadOnlySpan<byte> span = _va.AsSpan(start, length);
             int pos = 0;
 
             while (pos < length)
             {
                 long offset = start + pos;
-                ReadOnlySpan<byte> sp = _va.AsSpan(offset, length);
+                ReadOnlySpan<byte> sp = span.Slice(pos, length);
 
                 int sepIdx = sp.IndexOf((byte)';');
 
                 ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(_va, offset, sepIdx), out bool _);
 
-                sp = sp[++sepIdx..];
-
-                //int nlIdx = NewLine.IndexOf(sp);
-                //int nlIdx = IndexOfNewlineChar(sp, out int stride);
-                //double value = DoubleParser.ParseNaive(sp[..nlIdx]); //7 sec
-                //double value = double.Parse(sp[..nlIdx], NumberStyles.Float); 19 sec
-                double value = DoubleParser.ParseNaive(sp, out int bytes); //14 sec
+                double value = DoubleParser.ParseNaive(sp[++sepIdx..], out int bytes); 
 
                 summary.Apply(value);
 
+                pos += sepIdx + bytes + Helpers.NewLineBytesCount;
+            }
 
-                pos += sepIdx + bytes + NewLine.NewLineBytesCount;
+            return result;
+        }
+
+        public Dictionary<Utf8Span, Summary> ProcessChunk(long start, int length)
+        {
+            Dictionary<Utf8Span, Summary> result = new(512);
+
+            ReadOnlySpan<byte> span = _va.AsSpan(start, length);
+            int spanCurrentPosition = 0;
+            while (spanCurrentPosition < length)
+            {
+                ReadOnlySpan<byte> sp = span.Slice(spanCurrentPosition);
+
+                int sepIdx = sp.IndexOf((byte)';');
+                double value = DoubleParser.ParseNaive(sp.Slice(++sepIdx), out int bytes);
+
+                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(_va, start + spanCurrentPosition, sepIdx), out bool _);
+                summary.Apply(value);
+
+                spanCurrentPosition += sepIdx + bytes + Helpers.NewLineBytesCount;
             }
 
             return result;
@@ -116,16 +130,10 @@ namespace _1brc
                                                                     .ToList();
 
 
-            Dictionary<Utf8Span, Summary>? result = null;
+            Dictionary<Utf8Span, Summary>? result = chunks[0];
 
-            foreach (Dictionary<Utf8Span, Summary> chunk in chunks)
+            foreach (Dictionary<Utf8Span, Summary> chunk in chunks[1..])
             {
-                if (result == null)
-                {
-                    result = chunk;
-                    continue;
-                }
-
                 foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
                 {
                     ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, pair.Key, out bool exists);
