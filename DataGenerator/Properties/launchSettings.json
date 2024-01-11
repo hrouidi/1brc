@@ -2,7 +2,8 @@
   "profiles": {
     "DataGenerator": {
       "commandName": "Project",
-      "commandLineArgs": "120"
+      "commandLineArgs": "1000000000"
+      //"commandLineArgs": "120"
     }
   }
 }

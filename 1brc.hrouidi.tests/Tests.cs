@@ -1,4 +1,4 @@
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -9,26 +9,30 @@ namespace _1brc.hrouidi.tests
 {
     public class Tests
     {
-        [SetUp]
-        public void Setup()
-        {
-        }
 
         [Test]
         public void Test1()
         {
-            
-            const string path = @"D:\Workspace\hrouidi\1brc\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
-            string all = File.ReadAllText(path);
-            var tmp = all.Split(';');
-            var max = tmp.MaxBy(x=>x.Length).Length;
+            const string path = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
             using Solution app = new(path);
-            app.ProcessChunk1(new Dictionary<Solution.Utf8Span, Solution.Summary>(),0, 1743);
+            Dictionary<Solution.Utf8Span, Solution.Summary> dic = new();
+            app.ProcessChunk1(dic, 0, 1743);
+        }
+
+        [Test]
+        public void Test1_origin()
+        {
+            const string path = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
+            using App app = new(path);
+            //long length= RandomAccess.GetLength(File.OpenHandle(path, FileMode.Open,FileAccess.Read,FileShare.Read,FileOptions.None));
+            //Dictionary<Solution.Utf8Span, Solution.Summary> dic = new();
+            Dictionary<Utf8Span, Summary> ret = app.ProcessChunk( 0, 1_785);
         }
 
         [Test]
         public void ChunkifyTest()
         {
+            //14 _795_ 970_ 091 engie
             long fileLength = 14_595_855_653L;
             const int alignAs = 32;
             List<(long start, long length)> actual = Solution.Chunkify(fileLength, alignAs, out int rem);

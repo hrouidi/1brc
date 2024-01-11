@@ -161,7 +161,7 @@ namespace _1brc
             return chunks;
         }
 
-        public unsafe void ProcessChunk1(Dictionary<Utf8Span, Summary> result, long start, long length)
+        public unsafe void ProcessChunk11(Dictionary<Utf8Span, Summary> result, long start, long length)
         {
             Vector256<byte> comaVec = Vector256.Create((byte)';');
 
@@ -179,7 +179,7 @@ namespace _1brc
                 {
                     int index = BitOperations.TrailingZeroCount(mask);
                     /////////////////////
-                    int pos = index + nextStart;
+                    int pos = index;//+ nextStart;
 
                     pos += currentPosition[pos + 1] == '-' ? 1 : 0; // after this, data[pos] = position right before first digit
                     float sign = currentPosition[pos] == '-' ? -1 : 1;
@@ -190,11 +190,14 @@ namespace _1brc
                     int consumed = 6 + (currentPosition[pos + 3] == '.' ? 1 : 0);
 
                     // /////////////////////// 
-                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition + nextStart, index), out bool _);
+                    Utf8Span stationName = new(currentPosition + nextStart, index);
+                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, stationName, out bool _);
                     summary.Apply(value);
                     mask >>>= index + consumed;
                     nextStart = (pos + consumed) % Vector256<byte>.Count;
                 } //while (mask != 0);
+
+                nextStart -= Vector256<byte>.Count;
             }
             // reminder
 
@@ -204,6 +207,40 @@ namespace _1brc
             {
                 ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition, lastIndex), out bool _);
                 summary.Apply(lastIndex);
+            }
+        }
+
+        public unsafe void ProcessChunk1(Dictionary<Utf8Span, Summary> result, long start, long length)
+        {
+            Vector256<byte> comaVec = Vector256.Create((byte)';');
+
+            byte* startPosition = _mmf.DataPtr + start;
+            byte* endPosition = startPosition + length - Vector256<byte>.Count;
+            byte* currentPosition = startPosition;
+
+            for (; currentPosition < endPosition;)
+            {
+                Vector256<byte> vector = Vector256.Load(currentPosition);
+                Vector256<byte> comaEq = Vector256.Equals(vector, comaVec);
+                uint mask = (uint)Avx2.MoveMask(comaEq);
+                int index = BitOperations.TrailingZeroCount(mask);
+
+                /////////////////////
+                int pos = index;//+ nextStart;
+                pos += currentPosition[pos + 1] == '-' ? 1 : 0; // after this, data[pos] = position right before first digit
+                float sign = currentPosition[pos] == '-' ? -1 : 1;
+                float case1 = currentPosition[pos + 1] - 48 + 0.1f * (currentPosition[pos + 3] - 48); // 9.1
+                float case2 = 10 * (currentPosition[pos + 1] - 48) + (currentPosition[pos + 2] - 48) + 0.1f * (currentPosition[pos + 4] - 48); // 92.1
+                float value = currentPosition[pos + 2] == '.' ? case1 : case2;
+                value *= sign;
+                int consumed = 6 + (currentPosition[pos + 3] == '.' ? 1 : 0);
+
+                // /////////////////////// 
+                Utf8Span stationName = new(currentPosition, index);
+                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, stationName, out bool _);
+                summary.Apply(value);
+
+                currentPosition += index + consumed;
             }
         }
 
@@ -231,15 +268,11 @@ namespace _1brc
 
         public void PrintResult()
         {
-            var sw = Stopwatch.StartNew();
             Dictionary<Utf8Span, Summary> result = Process1();
 
             foreach ((Utf8Span key, Summary value) in result.OrderBy(x => x.Key.ToString()))
                 //foreach ((Utf8Span key, Summary value) in result)
                 Console.WriteLine($"{key} = {value}");
-
-            sw.Stop();
-            Console.WriteLine($"Processed in {sw.Elapsed}");
         }
 
         public void Dispose() => _mmf.Dispose();
@@ -323,7 +356,6 @@ namespace _1brc
                 return Length switch
                 {
                     > 3 => (Length * 820243) ^ MemoryMarshal.AsRef<int>(GetSpan()),
-                    //> 3 => HashCode.Combine(length , MemoryMarshal.AsRef<int>(GetSpan())),
                     > 1 => MemoryMarshal.AsRef<short>(GetSpan()),
                     > 0 => GetSpan()[0],
                     _ => 0

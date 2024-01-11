@@ -6,17 +6,13 @@ namespace DataGenerator
 {
     internal class Program
     {
-        private static readonly string _filePath = "./120.measurements.txt";
+        private static readonly string _filePath = "./1B.measurements.txt";
 
         private record WeatherStation(string Id, double MeanTemperature)
         {
-            private double GetGeneratedTemperature()
-            {
-                double m = Random.Shared.NextGaussian(MeanTemperature,10);
-                return Math.Round(m * 10.0) / 10.0;
-            }
-
-            public string Generate() => $"{Id};{GetGeneratedTemperature()}";
+            private double GetGeneratedTemperature() => Random.Shared.NextGaussian(MeanTemperature,10);
+            
+            public string Generate() => $"{Id};{GetGeneratedTemperature():F1}";
         }
 
         private static readonly List<WeatherStation> _stations = new()

@@ -6,13 +6,13 @@ class Program
 {
     static void Main(string[] args)
     {
+        const string filePath = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\1b.measurements.txt";
         var sw = Stopwatch.StartNew();
-        var path = args.Length > 0 ? args[0] : @"D:\Workspace\hrouidi\1brc\DataGenerator\bin\Debug\net8.0\measurements.txt";
+        var path = args.Length > 0 ? args[0] : filePath;
         using var app = new App(path);
-        // Console.WriteLine($"Chunk count: {app.SplitIntoMemoryChunks().Count}");
         app.PrintResult();
         sw.Stop();
         Console.WriteLine($"Processed in {sw.Elapsed}");
-        Environment.Exit(0);
+        Console.ReadLine();
     }
 }

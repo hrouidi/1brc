@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\1brc.hrouidi\1brc.hrouidi.csproj" />
+    <ProjectReference Include="..\1brc\1brc.csproj" />
   </ItemGroup>
 
 </Project>

@@ -100,7 +100,7 @@ namespace _1brc
             }
 
             _fileStream.Position = 0;
-            
+
             return chunks;
         }
 
@@ -127,9 +127,9 @@ namespace _1brc
         {
             return SplitIntoMemoryChunks()
                    .AsParallel()
-#if DEBUG
-                .WithDegreeOfParallelism(1)
-#endif
+                   //#if DEBUG
+                   //                .WithDegreeOfParallelism(1)
+                   //#endif
                    .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
                    .ToList()
                    .Aggregate((result, chunk) =>
@@ -150,27 +150,11 @@ namespace _1brc
 
         public void PrintResult()
         {
-            var result = Process();
+            Dictionary<Utf8Span, Summary> result = Process();
 
-            long count = 0;
-            Console.OutputEncoding = Encoding.UTF8;
-            Console.Write("{");
-            var line = 0;
-            foreach (var pair in result
-                         .Select(x => (Name: x.Key.ToString(), x.Value))
-                         .OrderBy(x => x.Name, StringComparer.Ordinal))
-            {
-                count += pair.Value.Count;
-                Console.Write($"{pair.Name} = {pair.Value}");
-                line++;
-                if (line < result.Count)
-                    Console.Write(", ");
-            }
-
-            Console.WriteLine("}");
-
-            if (count != 1_000_000_000)
-                Console.WriteLine($"Total row count {count:N0}");
+            foreach ((Utf8Span key, Summary value) in result.OrderBy(x => x.Key.ToString()))
+                //foreach ((Utf8Span key, Summary value) in result)
+                Console.WriteLine($"{key} = {value}");
         }
 
         public void Dispose()
