@@ -175,13 +175,11 @@ namespace _1brc
                 Vector256<byte> vector = Vector256.Load(currentPosition);
                 Vector256<byte> comaEq = Vector256.Equals(vector, comaVec);
                 uint mask = (uint)Avx2.MoveMask(comaEq);
-                int comaIndex = 0;
                 while (mask != 0)
                 {
                     int index = BitOperations.TrailingZeroCount(mask);
-                    comaIndex += index;
                     /////////////////////
-                    int pos = comaIndex;
+                    int pos = index + nextStart;
 
                     pos += currentPosition[pos + 1] == '-' ? 1 : 0; // after this, data[pos] = position right before first digit
                     float sign = currentPosition[pos] == '-' ? -1 : 1;
@@ -189,14 +187,13 @@ namespace _1brc
                     float case2 = 10 * (currentPosition[pos + 1] - 48) + (currentPosition[pos + 2] - 48) + 0.1f * (currentPosition[pos + 4] - 48); // 92.1
                     float value = currentPosition[pos + 2] == '.' ? case1 : case2;
                     value *= sign;
+                    int consumed = 6 + (currentPosition[pos + 3] == '.' ? 1 : 0);
 
-                    
                     // /////////////////////// 
-                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition + nextStart, comaIndex), out bool _);
+                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition + nextStart, index), out bool _);
                     summary.Apply(value);
-                    mask >>>= index + 1;
-                    comaIndex++;
-                    nextStart = pos + 6 + (currentPosition[pos + 3] == '.' ? 1 : 0);
+                    mask >>>= index + consumed;
+                    nextStart = (pos + consumed) % Vector256<byte>.Count;
                 } //while (mask != 0);
             }
             // reminder
