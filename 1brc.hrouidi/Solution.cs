@@ -1,32 +1,19 @@
 ﻿using System.Diagnostics;
-using System.IO.MemoryMappedFiles;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 using _1brc.hrouidi;
+using static _1brc.Solution;
 
 namespace _1brc
 {
-    public class Solution : IDisposable
+    public class Solution(string filePath) : IDisposable
     {
-        private readonly FileStream _fileStream;
-        private readonly MemoryMappedFile _mmf;
-        private readonly MemoryMappedViewAccessor _va;
-
-        private readonly long _fileLength;
-        private readonly int _initialChunkCount;
-
-        
-        public Solution(string filePath)
-        {
-            _initialChunkCount = Environment.ProcessorCount;
-            _fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.SequentialScan);
-            var fileLength = _fileStream.Length;
-            _mmf = MemoryMappedFile.CreateFromFile(_fileStream, $"{Path.GetFileName(filePath)}", fileLength, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
-            _va = _mmf.CreateViewAccessor(0, fileLength, MemoryMappedFileAccess.Read);
-
-            _fileLength = fileLength;
-        }
+        private readonly Mmf _mmf = new(filePath);
+        private readonly int _initialChunkCount = Environment.ProcessorCount;
 
         public List<(long start, int length)> SplitIntoMemoryChunks()
         {
@@ -38,11 +25,11 @@ namespace _1brc
             const int maxChunkSize = int.MaxValue - 100_000;
 
             int chunkCount = _initialChunkCount;
-            long chunkSize = _fileLength / chunkCount;
+            long chunkSize = _mmf.FileLength / chunkCount;
             while (chunkSize > maxChunkSize)
             {
                 chunkCount *= 2;
-                chunkSize = _fileLength / chunkCount;
+                chunkSize = _mmf.FileLength / chunkCount;
             }
 
             List<(long start, int length)> chunks = new(chunkCount);
@@ -51,15 +38,15 @@ namespace _1brc
 
             for (int i = 0; i < chunkCount; i++)
             {
-                if (pos + chunkSize >= _fileLength)
+                if (pos + chunkSize >= _mmf.FileLength)
                 {
-                    chunks.Add((pos, (int)(_fileLength - pos)));
+                    chunks.Add((pos, (int)(_mmf.FileLength - pos)));
                     break;
                 }
 
                 long newPos = pos + chunkSize;
                 //ReadOnlySpan<byte> sp = new ReadOnlySpan<byte>(_pointer + newPos, (int)chunkSize);
-                ReadOnlySpan<byte> sp = _va.AsSpan(newPos, (int)chunkSize);
+                ReadOnlySpan<byte> sp = _mmf.AsSpan(newPos, (int)chunkSize);
                 //var idx = IndexOfNewlineChar(sp, out var stride);
                 int idx = Helpers.IndexOfNewline(sp);
                 newPos += idx + Helpers.NewLineBytesCount;
@@ -71,46 +58,20 @@ namespace _1brc
             return chunks;
         }
 
-        public Dictionary<Utf8Span, Summary> ProcessChunk0(long start, int length)
-        {
-            Dictionary<Utf8Span, Summary> result = new(1024);
-
-            ReadOnlySpan<byte> span = _va.AsSpan(start, length);
-            int pos = 0;
-
-            while (pos < length)
-            {
-                long offset = start + pos;
-                ReadOnlySpan<byte> sp = span.Slice(pos, length);
-
-                int sepIdx = sp.IndexOf((byte)';');
-
-                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(_va, offset, sepIdx), out bool _);
-
-                double value = DoubleParser.ParseNaive(sp[++sepIdx..], out int bytes); 
-
-                summary.Apply(value);
-
-                pos += sepIdx + bytes + Helpers.NewLineBytesCount;
-            }
-
-            return result;
-        }
-
-        public Dictionary<Utf8Span, Summary> ProcessChunk(long start, int length)
+        public unsafe Dictionary<Utf8Span, Summary> ProcessChunk(long start, int length)
         {
             Dictionary<Utf8Span, Summary> result = new(512);
 
-            ReadOnlySpan<byte> span = _va.AsSpan(start, length);
+            ReadOnlySpan<byte> span = _mmf.AsSpan(start, length);
             int spanCurrentPosition = 0;
             while (spanCurrentPosition < length)
             {
                 ReadOnlySpan<byte> sp = span.Slice(spanCurrentPosition);
-
+                //Avx2.LoadAlignedVector256NonTemporal()
                 int sepIdx = sp.IndexOf((byte)';');
                 double value = DoubleParser.ParseNaive(sp.Slice(++sepIdx), out int bytes);
 
-                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(_va, start + spanCurrentPosition, sepIdx), out bool _);
+                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(_mmf.DataPtr + start + spanCurrentPosition, sepIdx), out bool _);
                 summary.Apply(value);
 
                 spanCurrentPosition += sepIdx + bytes + Helpers.NewLineBytesCount;
@@ -125,12 +86,12 @@ namespace _1brc
             List<(long start, int length)> chunkRanges = SplitIntoMemoryChunks();
 
 
-            List<Dictionary<Utf8Span, Summary>> chunks = chunkRanges.AsParallel()
-                                                                    .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
-                                                                    .ToList();
+            Dictionary<Utf8Span, Summary>[] chunks = chunkRanges.AsParallel()
+                                                                .Select(x => ProcessChunk(x.start, x.length))
+                                                                .ToArray();
 
 
-            Dictionary<Utf8Span, Summary>? result = chunks[0];
+            Dictionary<Utf8Span, Summary> result = chunks[0];
 
             foreach (Dictionary<Utf8Span, Summary> chunk in chunks[1..])
             {
@@ -144,13 +105,137 @@ namespace _1brc
                 }
             }
 
-            return result!;
+            return result;
+        }
+
+        public Dictionary<Utf8Span, Summary> Process1()
+        {
+
+            //List<(long start, long length)> chunkRanges = Chunkify(_mmf.FileLength, 1, out int rem);
+            List<(long start, int length)> chunkRanges = SplitIntoMemoryChunks();
+
+
+            Dictionary<Utf8Span, Summary>[] chunks = Enumerable.Range(0, Environment.ProcessorCount)
+                                                               .Select(static _ => new Dictionary<Utf8Span, Summary>(512))
+                                                               .ToArray();
+
+            Parallel.ForEach(chunkRanges, (x, _, tid) => ProcessChunk1(chunks[(int)tid], x.start, x.length));
+
+            Dictionary<Utf8Span, Summary> result = chunks[0];
+
+            foreach (Dictionary<Utf8Span, Summary> chunk in chunks[1..])
+            {
+                foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
+                {
+                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, pair.Key, out bool exists);
+                    if (exists)
+                        summary.Apply(pair.Value);
+                    else
+                        summary = pair.Value;
+                }
+            }
+
+            return result;
+        }
+
+        public static List<(long start, long length)> Chunkify(long fileLength, int alignment, out int subBlockSize)
+        {
+            int chunkCount = Environment.ProcessorCount;
+            //(long chunkSize, long rem) = long.DivRem(fileLength, chunkCount);
+            (long blocksCount, long blockRem) = long.DivRem(fileLength, alignment);
+            (long blocksPerChunk, long blocksPerChunkRem) = long.DivRem(blocksCount, chunkCount);
+
+            long chunkSize = blocksPerChunk * alignment;
+
+            List<(long start, long length)> chunks = new(chunkCount);
+
+            long start = 0;
+            for (int tid = 0; tid < chunkCount; tid++)
+            {
+                long fixedSize = chunkSize + (blocksPerChunkRem-- > 0 ? alignment : 0);
+                chunks.Add((start, fixedSize));
+                start += fixedSize;
+            }
+
+            subBlockSize = (int)blockRem;
+            return chunks;
+        }
+
+        public unsafe void ProcessChunk1(Dictionary<Utf8Span, Summary> result, long start, long length)
+        {
+            Vector256<byte> comaVec = Vector256.Create((byte)';');
+
+            byte* startPosition = _mmf.DataPtr + start;
+            byte* endPosition = startPosition + length - Vector256<byte>.Count;
+            byte* currentPosition = startPosition;
+
+            int nextStart = 0;
+            for (; currentPosition < endPosition; currentPosition += Vector256<byte>.Count)
+            {
+                Vector256<byte> vector = Vector256.Load(currentPosition);
+                Vector256<byte> comaEq = Vector256.Equals(vector, comaVec);
+                uint mask = (uint)Avx2.MoveMask(comaEq);
+                int comaIndex = 0;
+                while (mask != 0)
+                {
+                    int index = BitOperations.TrailingZeroCount(mask);
+                    comaIndex += index;
+                    /////////////////////
+                    int pos = comaIndex;
+
+                    pos += currentPosition[pos + 1] == '-' ? 1 : 0; // after this, data[pos] = position right before first digit
+                    float sign = currentPosition[pos] == '-' ? -1 : 1;
+                    float case1 = currentPosition[pos + 1] - 48 + 0.1f * (currentPosition[pos + 3] - 48); // 9.1
+                    float case2 = 10 * (currentPosition[pos + 1] - 48) + (currentPosition[pos + 2] - 48) + 0.1f * (currentPosition[pos + 4] - 48); // 92.1
+                    float value = currentPosition[pos + 2] == '.' ? case1 : case2;
+                    value *= sign;
+
+                    
+                    // /////////////////////// 
+                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition + nextStart, comaIndex), out bool _);
+                    summary.Apply(value);
+                    mask >>>= index + 1;
+                    comaIndex++;
+                    nextStart = pos + 6 + (currentPosition[pos + 3] == '.' ? 1 : 0);
+                } //while (mask != 0);
+            }
+            // reminder
+
+            var span = new ReadOnlySpan<byte>(currentPosition, (int)(startPosition + length - currentPosition));
+            var lastIndex = span.IndexOf((byte)';');
+            if (lastIndex > 0)
+            {
+                ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition, lastIndex), out bool _);
+                summary.Apply(lastIndex);
+            }
+        }
+
+        public unsafe void ProcessChunk10(Dictionary<Utf8Span, Summary> result, long start, long length)
+        {
+            byte* startPosition = _mmf.DataPtr + start;
+            byte* endPosition = startPosition + length;
+            //byte* currentPosition = startPosition;
+            int entryLength = 0;
+            for (byte* currentPosition = startPosition; currentPosition < endPosition; currentPosition++)
+            {
+                if (*currentPosition == (byte)';')
+                {
+
+                    ref Summary summary = ref CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(currentPosition, entryLength), out bool _);
+                    summary.Apply(entryLength);
+                    entryLength = 0;
+                }
+                else
+                {
+                    entryLength++;
+                }
+            }
         }
 
         public void PrintResult()
         {
             var sw = Stopwatch.StartNew();
-            Dictionary<Utf8Span, Summary> result = Process();
+            Dictionary<Utf8Span, Summary> result = Process1();
 
             foreach ((Utf8Span key, Summary value) in result.OrderBy(x => x.Key.ToString()))
                 //foreach ((Utf8Span key, Summary value) in result)
@@ -160,12 +245,7 @@ namespace _1brc
             Console.WriteLine($"Processed in {sw.Elapsed}");
         }
 
-        public void Dispose()
-        {
-            _va.Dispose();
-            _mmf.Dispose();
-            _fileStream.Dispose();
-        }
+        public void Dispose() => _mmf.Dispose();
 
         public struct Summary
         {
@@ -210,10 +290,20 @@ namespace _1brc
             public override string ToString() => $"{Min:N2}/{Average:N2}/{Max:N2}";
         }
 
-        public readonly struct Utf8Span(MemoryMappedViewAccessor accessor, long offset, int length) : IEquatable<Utf8Span>
+        public readonly unsafe struct Utf8Span : IEquatable<Utf8Span>
         {
+            internal readonly byte* Pointer;
+            internal readonly int Length;
+
+            public Utf8Span(byte* pointer, int length)
+            {
+                Debug.Assert(length >= 0);
+                Pointer = pointer;
+                Length = length;
+            }
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private ReadOnlySpan<byte> GetSpan() => accessor.AsSpan(offset, length);
+            private ReadOnlySpan<byte> GetSpan() => new(Pointer, Length);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool Equals(Utf8Span other) => GetSpan().SequenceEqual(other.GetSpan());
@@ -233,9 +323,9 @@ namespace _1brc
 
                 // The magic number 820243 is the largest happy prime that contains 2024 from https://prime-numbers.info/list/happy-primes-page-9
 
-                return length switch
+                return Length switch
                 {
-                    > 3 => (length * 820243) ^ MemoryMarshal.AsRef<int>(GetSpan()),
+                    > 3 => (Length * 820243) ^ MemoryMarshal.AsRef<int>(GetSpan()),
                     //> 3 => HashCode.Combine(length , MemoryMarshal.AsRef<int>(GetSpan())),
                     > 1 => MemoryMarshal.AsRef<short>(GetSpan()),
                     > 0 => GetSpan()[0],
@@ -244,8 +334,7 @@ namespace _1brc
                 //return GetSpan().GetHashCode();
             }
 
-            public override string ToString() => Encoding.UTF8.GetString(GetSpan());
+            public override string ToString() => new((sbyte*)Pointer, 0, Length, Encoding.UTF8);
         }
-
     }
 }

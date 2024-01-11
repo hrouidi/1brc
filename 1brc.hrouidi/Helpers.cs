@@ -2,6 +2,7 @@
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 
 namespace _1brc.hrouidi
@@ -61,7 +62,7 @@ namespace _1brc.hrouidi
             return sign * (whole + fraction);//* _powersOf10[fractionCount]);
         }
     }
-    
+
     public class Helpers
     {
         private static readonly byte[] _newLineBytes = Environment.NewLine.Select(x => (byte)x).ToArray();
@@ -73,8 +74,8 @@ namespace _1brc.hrouidi
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int IndexOfNewline(ReadOnlySpan<byte> span) => span.IndexOf(_firstByte);
 
-        
-        
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int IndexOfNewlineChar(ReadOnlySpan<byte> span, out int stride)
         {
@@ -97,12 +98,18 @@ namespace _1brc.hrouidi
         }
 
 
-       
+
 
     }
 
     public static class MemoryMappedViewAccessorExtensions
     {
+        public static unsafe byte* AsPointer(this MemoryMappedViewAccessor accessor, long offset = 0)
+        {
+            nint handle = accessor.SafeMemoryMappedViewHandle.DangerousGetHandle();
+            return (byte*)handle.ToPointer() + offset;
+        }
+
         public static unsafe ReadOnlySpan<byte> AsSpan(this MemoryMappedViewAccessor accessor, long offset, int length)
         {
             nint handle = accessor.SafeMemoryMappedViewHandle.DangerousGetHandle();
@@ -122,5 +129,34 @@ namespace _1brc.hrouidi
             return new ReadOnlySpan<byte>(ref Unsafe.Add(ref MemoryMarshal.GetReference(span), start));
         }
 
+    }
+
+    public sealed unsafe class Mmf : IDisposable
+    {
+        private readonly SafeFileHandle _file;
+        private readonly MemoryMappedFile _mmf;
+        private readonly MemoryMappedViewAccessor _va;
+
+        public long FileLength;
+        public byte* DataPtr;
+
+        public Mmf(string filePath)
+        {
+            _file = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.SequentialScan);
+            FileLength = RandomAccess.GetLength(_file);
+            _mmf = MemoryMappedFile.CreateFromFile(_file, $"{Path.GetFileName(filePath)}", FileLength, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
+            _va = _mmf.CreateViewAccessor(0, FileLength, MemoryMappedFileAccess.Read);
+            DataPtr = _va.AsPointer();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<byte> AsSpan(long offset, int length) => new(DataPtr + offset, length);
+
+        public void Dispose()
+        {
+            _file.Dispose();
+            _mmf.Dispose();
+            _va.Dispose();
+        }
     }
 }

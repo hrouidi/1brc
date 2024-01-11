@@ -1,9 +1,9 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
-using static System.Runtime.InteropServices.CollectionsMarshal;
 
 namespace _1brc
 {
@@ -114,8 +114,8 @@ namespace _1brc
                 var separatorIdx = remaining.IndexOf(0, (byte)';');
                 var dotIdx = remaining.IndexOf(separatorIdx + 1, (byte)'.');
                 var nlIdx = remaining.IndexOf(dotIdx + 1, (byte)'\n');
-                        
-                GetValueRefOrAddDefault(result, new Utf8Span(remaining.Pointer, separatorIdx), out var exists)
+
+                CollectionsMarshal.GetValueRefOrAddDefault(result, new Utf8Span(remaining.Pointer, separatorIdx), out var exists)
                     .Apply(remaining.ParseInt(separatorIdx + 1, dotIdx - separatorIdx - 1), exists);
                 remaining = remaining.SliceUnsafe(nlIdx + 1);
             }
@@ -123,27 +123,30 @@ namespace _1brc
             return result;
         }
 
-        public Dictionary<Utf8Span, Summary> Process() =>
-            SplitIntoMemoryChunks()
-                .AsParallel()
+        public Dictionary<Utf8Span, Summary> Process()
+        {
+            return SplitIntoMemoryChunks()
+                   .AsParallel()
 #if DEBUG
                 .WithDegreeOfParallelism(1)
 #endif
-                .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
-                .ToList()
-                .Aggregate((result, chunk) =>
-                {
-                    foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
-                    {
-                        ref var summary = ref GetValueRefOrAddDefault(result, pair.Key, out bool exists);
-                        if (exists)
-                            summary.Merge(pair.Value);
-                        else
-                            summary = pair.Value;
-                    }
+                   .Select((tuple => ProcessChunk(tuple.start, tuple.length)))
+                   .ToList()
+                   .Aggregate((result, chunk) =>
+                   {
+                       foreach (KeyValuePair<Utf8Span, Summary> pair in chunk)
+                       {
+                           ref var summary =
+                               ref CollectionsMarshal.GetValueRefOrAddDefault(result, pair.Key, out bool exists);
+                           if (exists)
+                               summary.Merge(pair.Value);
+                           else
+                               summary = pair.Value;
+                       }
 
-                    return result;
-                });
+                       return result;
+                   });
+        }
 
         public void PrintResult()
         {

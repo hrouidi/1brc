@@ -32,21 +32,12 @@ namespace _1brc
         /// Slice without bound checks. Use only when the bounds are checked/ensured before the call.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Utf8Span SliceUnsafe(int start, int length) => new(Pointer + start, length);
-
-        /// <summary>
-        /// Slice without bound checks. Use only when the bounds are checked/ensured before the call.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Utf8Span SliceUnsafe(int start) => new(Pointer + start, Length - start);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(Utf8Span other) => Span.SequenceEqual(other.Span);
 
-        public override bool Equals(object? obj)
-        {
-            return obj is Utf8Span other && Equals(other);
-        }
+        public override bool Equals(object? obj) => obj is Utf8Span other && Equals(other);
 
         public override int GetHashCode()
         {
@@ -64,7 +55,7 @@ namespace _1brc
             // Avoid zero-extension when casting to int, go via uint first.
 
             if (Length > 3)
-                return (Length * 820243) ^ (int)(*(uint*)Pointer);
+                return (Length * 820243) ^ (int)*(uint*)Pointer;
 
             if (Length > 1)
                 return (int)(uint)(*(ushort*)Pointer);
