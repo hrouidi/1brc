@@ -218,7 +218,7 @@ namespace _1brc
             byte* endPosition = startPosition + length - Vector256<byte>.Count;
             byte* currentPosition = startPosition;
 
-            for (; currentPosition < endPosition;)
+            while (currentPosition < endPosition)
             {
                 Vector256<byte> vector = Vector256.Load(currentPosition);
                 Vector256<byte> comaEq = Vector256.Equals(vector, comaVec);
@@ -266,9 +266,14 @@ namespace _1brc
             }
         }
 
+        public static HashSet<(string, string)> Collisions = new HashSet<(string, string)>();
+
         public void PrintResult()
         {
             Dictionary<Utf8Span, Summary> result = Process1();
+
+            foreach ((string key1, string key2) in Collisions)
+                Console.WriteLine($"### Collision at {key1}:{key2}");
 
             foreach ((Utf8Span key, Summary value) in result.OrderBy(x => x.Key.ToString()))
                 //foreach ((Utf8Span key, Summary value) in result)
@@ -320,6 +325,8 @@ namespace _1brc
             public override string ToString() => $"{Min:N2}/{Average:N2}/{Max:N2}";
         }
 
+
+
         public readonly unsafe struct Utf8Span : IEquatable<Utf8Span>
         {
             internal readonly byte* Pointer;
@@ -336,7 +343,13 @@ namespace _1brc
             private ReadOnlySpan<byte> GetSpan() => new(Pointer, Length);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool Equals(Utf8Span other) => GetSpan().SequenceEqual(other.GetSpan());
+            public bool Equals(Utf8Span other)
+            {
+                var ret = GetSpan().SequenceEqual(other.GetSpan());
+                if (ret == false)
+                    Collisions.Add((this.ToString(), other.ToString()));
+                return ret;
+            }
 
             public override bool Equals(object? obj) => obj is Utf8Span other && Equals(other);
 
@@ -353,13 +366,21 @@ namespace _1brc
 
                 // The magic number 820243 is the largest happy prime that contains 2024 from https://prime-numbers.info/list/happy-primes-page-9
 
-                return Length switch
-                {
-                    > 3 => (Length * 820243) ^ MemoryMarshal.AsRef<int>(GetSpan()),
-                    > 1 => MemoryMarshal.AsRef<short>(GetSpan()),
-                    > 0 => GetSpan()[0],
-                    _ => 0
-                };
+                if (Length > 3)
+                    return (Length * 820243) ^ (int)*(uint*)Pointer;
+
+                if (Length > 1)
+                    return *(ushort*)Pointer;
+
+                return *Pointer;
+
+                //return Length switch
+                //{
+                //    > 3 => (Length * 820243) ^ MemoryMarshal.AsRef<int>(GetSpan()),
+                //    > 1 => MemoryMarshal.AsRef<short>(GetSpan()),
+                //    > 0 => GetSpan()[0],
+                //    _ => 0
+                //};
                 //return GetSpan().GetHashCode();
             }
 

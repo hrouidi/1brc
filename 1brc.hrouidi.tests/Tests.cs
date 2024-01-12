@@ -13,7 +13,8 @@ namespace _1brc.hrouidi.tests
         [Test]
         public void Test1()
         {
-            const string path = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
+            //const string path = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
+            const string path = @"D:\Workspace\hrouidi\1brc\DataGenerator\bin\Debug\net8.0\1B.measurements.txt";
             using Solution app = new(path);
             Dictionary<Solution.Utf8Span, Solution.Summary> dic = new();
             app.ProcessChunk1(dic, 0, 1743);
@@ -22,7 +23,8 @@ namespace _1brc.hrouidi.tests
         [Test]
         public void Test1_origin()
         {
-            const string path = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
+            //const string path = @"C:\Users\WT6540\source\extern\1brc.hrouidi\DataGenerator\bin\Debug\net8.0\120.measurements.txt";
+            const string path = @"D:\Workspace\hrouidi\1brc\DataGenerator\bin\Debug\net8.0\1B.measurements.txt";
             using App app = new(path);
             //long length= RandomAccess.GetLength(File.OpenHandle(path, FileMode.Open,FileAccess.Read,FileShare.Read,FileOptions.None));
             //Dictionary<Solution.Utf8Span, Solution.Summary> dic = new();
