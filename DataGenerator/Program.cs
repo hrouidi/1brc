@@ -4,18 +4,18 @@ using System.Diagnostics;
 
 namespace DataGenerator
 {
-    internal class Program
+    public class Program
     {
         private static readonly string _filePath = "./1B.measurements.txt";
 
-        private record WeatherStation(string Id, double MeanTemperature)
+        public record WeatherStation(string Id, double MeanTemperature)
         {
             private double GetGeneratedTemperature() => Random.Shared.NextGaussian(MeanTemperature,10);
             
             public string Generate() => $"{Id};{GetGeneratedTemperature():F1}";
         }
 
-        private static readonly List<WeatherStation> _stations = new()
+        public static readonly List<WeatherStation> Stations = new()
         {
             new("Abha", 18.0),
             new("Abidjan", 26.0),
@@ -451,7 +451,7 @@ namespace DataGenerator
             await using StreamWriter sw = File.CreateText(_filePath);
             for (int i = 0; i < size; i++)
             {
-                WeatherStation ws = _stations[Random.Shared.Next(0, _stations.Count)];
+                WeatherStation ws = Stations[Random.Shared.Next(0, Stations.Count)];
                 await sw.WriteLineAsync(ws.Generate());
             }
             stopwatch.Stop();
