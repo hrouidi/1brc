@@ -2,37 +2,28 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace _1brc.hrouidi
+namespace OneBrc.HRouidi
 {
-    public readonly unsafe struct Utf8Span : IEquatable<Utf8Span>
+    public readonly unsafe struct Utf8Span : IEquatable<Utf8Span>,IComparable<Utf8Span>
     {
         internal readonly byte* Pointer;
         internal readonly int Length;
-        private readonly HashSet<(string, string)>? _collisionSet;
 
-
-        public Utf8Span(byte* pointer, int length) : this(pointer, length, null) { }
-
-        public Utf8Span(byte* pointer, int length, HashSet<(string, string)>? collisionSet)
+        public Utf8Span(byte* pointer, int length)
         {
             Debug.Assert(length >= 0);
             Pointer = pointer;
             Length = length;
-            _collisionSet = collisionSet;
         }
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private ReadOnlySpan<byte> GetSpan() => new(Pointer, Length);
+        public ReadOnlySpan<byte> GetSpan() => new(Pointer, Length);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(Utf8Span other)
         {
             var ret = GetSpan().SequenceEqual(other.GetSpan());
-#if DEBUG
-            if (ret == false)
-                _collisionSet?.Add((ToString(), other.ToString()));
-#endif
             return ret;
         }
 
@@ -51,5 +42,7 @@ namespace _1brc.hrouidi
         }
 
         public override string ToString() => new((sbyte*)Pointer, 0, Length, Encoding.UTF8);
+
+        public int CompareTo(Utf8Span other) => GetSpan().SequenceCompareTo(other.GetSpan());
     }
 }

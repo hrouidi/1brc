@@ -1,18 +1,16 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace DataGenerator
 {
     public class Program
     {
-        private static readonly string _filePath = "./1B.measurements.txt";
+        private static readonly string _filePath = "./1billion.measurements.txt";
 
         public record WeatherStation(string Id, double MeanTemperature)
         {
             private double GetGeneratedTemperature() => Random.Shared.NextGaussian(MeanTemperature,10);
             
-            public string Generate() => $"{Id};{GetGeneratedTemperature():F1}";
+            public string Generate() => $"{Id};{GetGeneratedTemperature():F1}\n";
         }
 
         public static readonly List<WeatherStation> Stations = new()
@@ -452,7 +450,7 @@ namespace DataGenerator
             for (int i = 0; i < size; i++)
             {
                 WeatherStation ws = Stations[Random.Shared.Next(0, Stations.Count)];
-                await sw.WriteLineAsync(ws.Generate());
+                await sw.WriteAsync(ws.Generate());
             }
             stopwatch.Stop();
             Console.WriteLine($"Created file with {size} measurements in {stopwatch.Elapsed:g}");

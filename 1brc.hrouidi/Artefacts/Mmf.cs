@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Win32.SafeHandles;
 
-namespace _1brc.hrouidi
+namespace OneBrc.HRouidi
 {
     public sealed unsafe class Mmf : IDisposable
     {
@@ -10,8 +10,8 @@ namespace _1brc.hrouidi
         private readonly MemoryMappedFile _mmf;
         private readonly MemoryMappedViewAccessor _va;
 
-        public long FileLength;
-        public byte* DataPtr;
+        public long FileLength { get; }
+        public byte* DataPtr { get; }
 
         public Mmf(string filePath)
         {
@@ -19,7 +19,7 @@ namespace _1brc.hrouidi
             FileLength = RandomAccess.GetLength(_file);
             _mmf = MemoryMappedFile.CreateFromFile(_file, $"{Path.GetFileName(filePath)}", FileLength, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
             _va = _mmf.CreateViewAccessor(0, FileLength, MemoryMappedFileAccess.Read);
-            DataPtr = _va.AsPointer();
+            DataPtr = AsPointer(_va);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -30,6 +30,12 @@ namespace _1brc.hrouidi
             _file.Dispose();
             _mmf.Dispose();
             _va.Dispose();
+        }
+
+        public static byte* AsPointer(MemoryMappedViewAccessor accessor, long offset = 0)
+        {
+            nint handle = accessor.SafeMemoryMappedViewHandle.DangerousGetHandle();
+            return (byte*)handle.ToPointer() + offset;
         }
     }
 }

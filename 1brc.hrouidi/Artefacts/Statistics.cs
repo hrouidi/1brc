@@ -1,30 +1,21 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Globalization;
+using System.Runtime.CompilerServices;
 
-namespace _1brc.hrouidi
+namespace OneBrc.HRouidi
 {
-    public struct Statistics
+    public struct Statistics()
     {
-        public double Min;
-        public double Max;
-        public double Sum;
-        public long Count;
-
-        public Statistics()
-        {
-            Min = float.MaxValue;
-            Max = float.MinValue;
-            Sum = 0;
-            Count = 0;
-        }
-
-        public double Average => Sum / Count;
+        float Min = 1024;
+        float Max = -1024;
+        float Sum = 0;
+        int Count = 0;
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Apply(double value)
+        public void Apply(float value)
         {
-            Min = Math.Min(Min, value);
-            Max = Math.Max(Max, value);
+            Min = Count != 0 ? MathF.Min(Min, value) : value;
+            Max = Count != 0 ? MathF.Max(Max, value) : value;
             Sum += value;
             Count++;
         }
@@ -32,12 +23,14 @@ namespace _1brc.hrouidi
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Apply(Statistics other)
         {
-            Min = other.Min < Min ? other.Min : Min;
-            Max = other.Max > Max ? other.Max : Max;
+            Min = MathF.Min(other.Min, Min);
+            Max = MathF.Max(other.Max, Max);
             Sum += other.Sum;
             Count += other.Count;
         }
 
-        public override string ToString() => $"{Min:N2}/{Average:N2}/{Max:N2}";
+        private float Average => Sum / Count;
+
+        public override string ToString() => string.Format(CultureInfo.InvariantCulture, "{0:N1}/{1:N1}/{2:N1}", Min, MathF.Round(Average,1, MidpointRounding.AwayFromZero), Max);
     }
 }

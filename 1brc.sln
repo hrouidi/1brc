@@ -5,11 +5,11 @@ VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "1brc", "1brc\1brc.csproj", "{82268F02-4789-4788-A56D-309DCAAA9BEC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataGenerator", "DataGenerator\DataGenerator.csproj", "{4FB8F658-F6C8-4BBF-836A-4AAA5A08420E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DataGenerator", "DataGenerator\DataGenerator.csproj", "{4FB8F658-F6C8-4BBF-836A-4AAA5A08420E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "1brc.hrouidi", "1brc.hrouidi\1brc.hrouidi.csproj", "{B6802249-8A9D-4E94-8A88-AB0AD7DEFB2E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OneBrc.HRouidi", "1brc.hrouidi\OneBrc.HRouidi.csproj", "{B6802249-8A9D-4E94-8A88-AB0AD7DEFB2E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "1brc.hrouidi.tests", "1brc.hrouidi.tests\1brc.hrouidi.tests.csproj", "{30CCCA95-E4B0-40BF-ADCC-B3CEBA10C471}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OneBrc.HRouidi.tests", "1brc.hrouidi.tests\OneBrc.HRouidi.tests.csproj", "{30CCCA95-E4B0-40BF-ADCC-B3CEBA10C471}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
