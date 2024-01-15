@@ -33,7 +33,7 @@ namespace OneBrc.HRouidi
         {
             var ret = Length switch
             {
-                >= 8 => Length * 820243 ^ *(int*)Pointer + *(int*)(Pointer + 4),
+                //>= 8 => Length * 820243 ^ *(int*)Pointer + *(int*)(Pointer + 4),
                 >= 4 => Length * 820243 ^ *(int*)Pointer,
                 _ => *(ushort*)Pointer // length == 3 ( 2 cases)
             };

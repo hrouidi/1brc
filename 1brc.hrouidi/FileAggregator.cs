@@ -97,17 +97,24 @@ namespace OneBrc.HRouidi
 
             return result;
         }
-        
-        internal unsafe Dictionary<Utf8Span, Statistics> ProcessChunk(Dictionary<Utf8Span, Statistics> result, long start, int length)
+
+        internal unsafe void ProcessChunk(Dictionary<Utf8Span, Statistics> result, long start, int length)
         {
-            ReadOnlySpan<byte> span = Mmf.AsSpan(start, length);
-            byte* startPtr = Mmf.DataPtr + start;
+            ProcessChunk(result, Mmf.DataPtr, start, length);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void ProcessChunk0(Dictionary<Utf8Span, Statistics> result, byte* data, long start, int length)
+        {
+            byte* startPtr = data + start;
+            ReadOnlySpan<byte> span = new ReadOnlySpan<byte>(startPtr, length);
+
             int spanCurrentPosition = 0;
             while (spanCurrentPosition < length)
             {
-                ReadOnlySpan<byte> sp = span.Slice(spanCurrentPosition);
+                ReadOnlySpan<byte> sp = span[spanCurrentPosition..];
                 int sepIdx = sp.IndexOf((byte)';');
-                float value = TemperatureParser.ParseSimple(sp.Slice(sepIdx), out int bytes);
+                float value = TemperatureParser.Parse(sp[sepIdx..], out int bytes);
 
                 Utf8Span stationName = new(startPtr + spanCurrentPosition, sepIdx);
                 ref Statistics statistics = ref CollectionsMarshal.GetValueRefOrAddDefault(result, stationName, out bool _);
@@ -115,8 +122,29 @@ namespace OneBrc.HRouidi
 
                 spanCurrentPosition += sepIdx + bytes;
             }
+        }
 
-            return result;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void ProcessChunk(Dictionary<Utf8Span, Statistics> result, byte* data, long start, int length)
+        {
+            byte* startPtr = data + start;
+            byte* endPtr = startPtr + length;
+            //ReadOnlySpan<byte> span = new ReadOnlySpan<byte>(startPtr, length);
+
+            byte* spanCurrentPosition = startPtr;
+            while (spanCurrentPosition < endPtr)
+            {
+                //ReadOnlySpan<byte> sp = new ReadOnlySpan<byte>(spanCurrentPosition,length-(int)(spanCurrentPosition- startPtr));
+                ReadOnlySpan<byte> sp = new ReadOnlySpan<byte>(spanCurrentPosition, (int)(endPtr - spanCurrentPosition));
+                int sepIdx = sp.IndexOf((byte)';');
+                float value = TemperatureParser.UnsafeParse(spanCurrentPosition + sepIdx, out int bytes);
+
+                Utf8Span stationName = new(spanCurrentPosition, sepIdx);
+                ref Statistics statistics = ref CollectionsMarshal.GetValueRefOrAddDefault(result, stationName, out bool _);
+                statistics.Apply(value);
+
+                spanCurrentPosition += sepIdx + bytes;
+            }
         }
 
         internal unsafe void ProcessChunk1(Dictionary<Utf8Span, Statistics> result, long start, long length)
@@ -276,20 +304,17 @@ namespace OneBrc.HRouidi
             return $"{{{tmp}}}";
         }
 
-        public (TimeSpan processTimeSpan, TimeSpan SortAndPrintTimeSpan) ProcessAndPrintResult()
+        public (TimeSpan processTimeSpan, TimeSpan sortAndPrintTimeSpan) ProcessAndPrintResult()
         {
-            TimeSpan processTimeSpan;
-            TimeSpan SortAndPrintTimeSpan;
             Stopwatch sw = Stopwatch.StartNew();
             Dictionary<Utf8Span, Statistics> result = Process();
             sw.Stop();
-            processTimeSpan = sw.Elapsed;
+            TimeSpan processTimeSpan = sw.Elapsed;
             sw.Restart();
             Console.WriteLine(SortAndDumpToString(result));
             sw.Stop();
-            SortAndPrintTimeSpan = sw.Elapsed;
             //Console.WriteLine($"### Count{result.Count}");
-            return(processTimeSpan, SortAndPrintTimeSpan);
+            return (processTimeSpan, sw.Elapsed);
         }
 
         public void Dispose() => Mmf.Dispose();
